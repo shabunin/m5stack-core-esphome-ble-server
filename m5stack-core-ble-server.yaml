@@ -1,0 +1,121 @@
+substitutions:
+  name: "m5stack-core"
+
+esphome:
+  name: "${name}"
+  name_add_mac_suffix: true
+  project:
+    name: bobalus.m5stack-core
+    version: "1.0"
+
+esp32:
+  board: m5stack-core-esp32
+  framework:
+    type: esp-idf
+
+    
+# To be able to get logs from the device via serial and api.
+logger:
+
+uart:
+  rx_pin: 16
+  baud_rate: 9600
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+  frequency: 400kHz
+
+spi:
+  clk_pin: 18
+  mosi_pin: 23
+  miso_pin: 19
+  interface: any
+        
+binary_sensor:
+  - platform: gpio
+    name: "M5_BtnA"
+    pin:
+      number: 39
+      inverted: true
+    on_click:
+      min_length: 0s
+      max_length: 10s
+      then:
+        - logger.log: "Hello World AAA"
+        - display.page.show_previous: m5stack_display
+        - component.update: m5stack_display
+  - platform: gpio
+    id: M5_BtnB
+    pin:
+      number: 38
+      inverted: true
+    on_click:
+      min_length: 0s
+      max_length: 10s
+      then:
+        - logger.log: "Hello World BBB"
+        - light.toggle: back_light
+  - platform: gpio
+    id: M5_BtnC
+    pin:
+      number: 37
+      inverted: true
+    on_click:
+      min_length: 0s
+      max_length: 10s
+      then:
+        - logger.log: "Hello World CCC"
+        - display.page.show_next: m5stack_display
+        - component.update: m5stack_display
+        
+font:
+  - file: "gfonts://Roboto@medium"
+    id: my_font
+    size: 22
+    glyphs: '!"%()+,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz/³µ'
+
+# GPIO pin of the display backlight
+output:
+  - platform: ledc
+    pin: 32
+    id: gpio_32_backlight_pwm
+    
+light:
+  - platform: monochromatic
+    output: gpio_32_backlight_pwm
+    name: "Display Backlight"
+    id: back_light
+    restore_mode: ALWAYS_ON
+   
+display:
+  - platform: ili9xxx
+    id: m5stack_display
+    model: M5Stack
+    invert_colors: false
+    color_palette: 8BIT
+    data_rate: 20MHz
+    spi_mode: 3
+    cs_pin: 14
+    dc_pin: 27
+    reset_pin: 33
+    rotation: 0
+    update_interval: 300s
+    pages:
+      - id: page1
+        lambda: |-
+          it.print(0, 10, id(my_font), "This is page 1!");
+      - id: page2
+        lambda: |-
+          it.print(0, 10, id(my_font), "This is page 2!");
+
+esp32_ble_server:
+  services:
+    - uuid: 2a24b789-7aab-4535-af3e-ee76a35cc42d
+      advertise: false
+      characteristics:
+        - uuid: cad48e28-7fbe-41cf-bae9-d77a6c233423
+          read: true
+          value: "Hello, World!"
+
