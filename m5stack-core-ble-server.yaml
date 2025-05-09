@@ -13,7 +13,14 @@ esp32:
   framework:
     type: esp-idf
 
-    
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/ssieb/custom_components
+    components: [ip5306]
+
+  
 # To be able to get logs from the device via serial and api.
 logger:
 
@@ -32,6 +39,18 @@ spi:
   mosi_pin: 23
   miso_pin: 19
   interface: any
+
+# battery
+ip5306:
+  battery_level:
+    name: ${name}-battery-level
+    id: battery_percent
+  charger_connected:
+    name: ${name} Charger Connected
+    id: connected
+  charge_full:
+    name: ${name} Charge Full
+    id: full
         
 binary_sensor:
   - platform: gpio
@@ -88,7 +107,7 @@ light:
     name: "Display Backlight"
     id: back_light
     restore_mode: ALWAYS_ON
-   
+    
 display:
   - platform: ili9xxx
     id: m5stack_display
@@ -112,10 +131,14 @@ display:
 
 esp32_ble_server:
   services:
-    - uuid: 2a24b789-7aab-4535-af3e-ee76a35cc42d
-      advertise: false
+    - uuid: 0000180F-0000-1000-8000-00805f9b34fb # battery service
+      advertise: true
       characteristics:
-        - uuid: cad48e28-7fbe-41cf-bae9-d77a6c233423
+        - uuid: 00002A19-0000-1000-8000-00805f9b34fb
           read: true
-          value: "Hello, World!"
-
+          notify: true
+          value:
+            data: !lambda |-
+              float percent = id(battery_percent).state;
+              uint8_t level = (uint8_t)(percent * 255.0f / 100.0f);
+              return std::vector<uint8_t>({level});
