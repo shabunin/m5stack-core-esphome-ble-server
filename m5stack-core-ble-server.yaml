@@ -101,8 +101,31 @@ binary_sensor:
               id(m5stack_display).update(); 
               return;
             }
+
             if (id(global_page) == PAGE_ALARMS) {
               id(alarms_menu).up();
+            } else if (id(global_page) == PAGE_MUSIC) {
+              
+              std::string json = R"({"t":"music","n":"previous"} )";
+              json = json + "\n";
+
+              // send in chunks
+              const size_t max_len = 20;
+              for (size_t i = 0; i < json.length(); i += max_len) {
+                size_t len = std::min(max_len, json.length() - i);
+                std::vector<uint8_t> chunk(json.begin() + i, json.begin() + i + len);
+                
+                std::string chunk_str(chunk.begin(), chunk.end());
+                ESP_LOGI("BLE TX", "%s", chunk_str.c_str());                
+
+                id(tx_char).set_value(chunk);
+                id(tx_char).notify();
+                delay(30);  // small delay to allow BLE stack to process
+              }
+              std::vector<uint8_t> out;
+              out.push_back(0x0a);
+              id(tx_char).set_value(out);
+              id(tx_char).notify();
             }
 
   - platform: gpio
@@ -138,10 +161,64 @@ binary_sensor:
             
             id(m5stack_display).update();
     - timing:
-        - ON for at most 1s
+        - ON for at most 0.7s
         - OFF for at least 0.5s
       then:
         - logger.log: "Single Short Clicked"
+        - lambda: |-
+
+            if (id(global_mode) == MODE_NORMAL) {
+              return;
+            }
+            
+            if (id(global_page) == PAGE_MUSIC) {
+              
+              std::string json = R"({"t":"music","n":"playpause"} )";
+              json = json + "\n";
+
+              // send in chunks
+              const size_t max_len = 20;
+              for (size_t i = 0; i < json.length(); i += max_len) {
+                size_t len = std::min(max_len, json.length() - i);
+                std::vector<uint8_t> chunk(json.begin() + i, json.begin() + i + len);
+                
+                std::string chunk_str(chunk.begin(), chunk.end());
+                ESP_LOGI("BLE TX", "%s", chunk_str.c_str());                
+
+                id(tx_char).set_value(chunk);
+                id(tx_char).notify();
+                delay(30);  // small delay to allow BLE stack to process
+              }
+              std::vector<uint8_t> out;
+              out.push_back(0x0a);
+              id(tx_char).set_value(out);
+              id(tx_char).notify();
+
+            } else if (id(global_page) == PAGE_ALARMS) {
+              id(alarms_menu).enter();
+            } else if (id(global_page) == PAGE_HOME) {
+              std::string json = R"({"t":"info","msg":"someweirdsin"} )";
+              json = json + "\n";
+
+              // send in chunks
+              const size_t max_len = 20;
+              for (size_t i = 0; i < json.length(); i += max_len) {
+                size_t len = std::min(max_len, json.length() - i);
+                std::vector<uint8_t> chunk(json.begin() + i, json.begin() + i + len);
+                
+                std::string chunk_str(chunk.begin(), chunk.end());
+                ESP_LOGI("BLE TX", "%s", chunk_str.c_str());                
+
+                id(tx_char).set_value(chunk);
+                id(tx_char).notify();
+                delay(30);  // small delay to allow BLE stack to process
+              }
+              std::vector<uint8_t> out;
+              out.push_back(0x0a);
+              id(tx_char).set_value(out);
+              id(tx_char).notify();
+            }
+            
 
   - platform: gpio
     id: M5_BtnC
@@ -163,7 +240,29 @@ binary_sensor:
             }
             if (id(global_page) == PAGE_ALARMS) {
               id(alarms_menu).down();
+            } else if (id(global_page) == PAGE_MUSIC) {
+              std::string json = R"({"t":"music","n":"next"} )";
+              json = json + "\n";
+
+              // send in chunks
+              const size_t max_len = 20;
+              for (size_t i = 0; i < json.length(); i += max_len) {
+                size_t len = std::min(max_len, json.length() - i);
+                std::vector<uint8_t> chunk(json.begin() + i, json.begin() + i + len);
+                
+                std::string chunk_str(chunk.begin(), chunk.end());
+                ESP_LOGI("BLE TX", "%s", chunk_str.c_str());                
+
+                id(tx_char).set_value(chunk);
+                id(tx_char).notify();
+                delay(30);  // small delay to allow BLE stack to process
+              }
+              std::vector<uint8_t> out;
+              out.push_back(0x0a);
+              id(tx_char).set_value(out);
+              id(tx_char).notify();
             }
+            
             
 font:
   - file: "gfonts://Ubuntu+Mono"
@@ -318,6 +417,7 @@ esp32_ble_server:
                         std::vector<uint8_t> out(gps_resp, gps_resp + strlen(gps_resp));
                         id(tx_char).set_value(out);
                         id(tx_char).notify();
+
                       } else if (type == "alarm") {
                         id(global_alarms).clear();  // overwrite with new list
                         JsonArray alarms = doc["d"].as<JsonArray>();
