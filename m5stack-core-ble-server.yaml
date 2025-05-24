@@ -51,6 +51,15 @@ external_components:
       url: https://github.com/ssieb/custom_components
     components: [ip5306]
 
+script:
+  - id: script_update_components
+    mode: restart
+    then:
+      - delay: 300ms
+      - lambda: |-
+          ESP_LOGI("SCRIPT", "updating components");
+          id(m5stack_display).update();
+
 logger:
 
 uart:
@@ -147,7 +156,9 @@ binary_sensor:
             if (id(global_mode) == 2)
               id(global_mode) = 0;
             
-            id(m5stack_display).update();
+            id(script_update_components).stop();
+            id(script_update_components).execute();
+
     - timing:
         - ON for 1s to 7s
         - OFF for at least 0.5s
@@ -159,7 +170,8 @@ binary_sensor:
             if (id(global_mode) == 2)
               id(global_mode) = 0;
             
-            id(m5stack_display).update();
+            id(script_update_components).stop();
+            id(script_update_components).execute();
     - timing:
         - ON for at most 0.7s
         - OFF for at least 0.5s
@@ -235,7 +247,8 @@ binary_sensor:
             if (id(global_mode) == MODE_NORMAL) {
               if (id(global_page) < PAGE_MAX)
                 id(global_page) += 1;
-              id(m5stack_display).update(); 
+              id(script_update_components).stop();
+              id(script_update_components).execute(); 
               return;
             }
             if (id(global_page) == PAGE_ALARMS) {
@@ -492,7 +505,8 @@ esp32_ble_server:
                     end = id(global_ble_rx_buf).find(")\n", start);
                   }
 
-                  id(m5stack_display).update();
+                  id(script_update_components).stop();
+                  id(script_update_components).execute();
 
                   // Optional: prevent buffer overflow
                   if (id(global_ble_rx_buf).length() > 2048) {
