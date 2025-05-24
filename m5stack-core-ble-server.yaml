@@ -5,13 +5,31 @@ globals:
   - id: global_ble_rx_buf
     type: std::string
     restore_value: no
-    initial_value: ""
+    initial_value: '""'
   - id: global_alarms
     type: std::vector<uint32_t>
-    restore_value: no  # persistent across reboots
-  - id: my_menu_root
+    restore_value: no 
+  - id: alarms_menu_root # store it as a global to be able to manipulate from lambda
     type: display_menu_base::MenuItemMenu*
     initial_value: 'nullptr'
+  - id: global_mode
+    type: int
+    initial_value: '0' 
+  - id: global_page
+    type: int
+    initial_value: '0' 
+  - id: global_music_artist
+    type: std::string
+    restore_value: no
+    initial_value: '"---"' 
+  - id: global_music_track
+    type: std::string
+    restore_value: no
+    initial_value: '"---"'
+  - id: global_music_state
+    type: std::string
+    restore_value: no
+    initial_value: '"---"' 
 
 esphome:
   name: "${name}"
@@ -20,7 +38,7 @@ esphome:
     name: bobalus.m5stack-core
     version: "1.0"
   includes:
-    - alarm_defs.h
+    - defs.h
 
 esp32:
   board: m5stack-core-esp32
@@ -69,37 +87,100 @@ binary_sensor:
     pin:
       number: 39
       inverted: true
-    on_click:
-      min_length: 0s
-      max_length: 10s
+    
+    on_multi_click:
+    - timing:
+        - ON for at most 1s
+        - OFF for at least 0.5s
       then:
-        - display_menu.up: my_menu
+        - logger.log: "Single Short Clicked"
+        - lambda: |-
+            if (id(global_mode) == MODE_NORMAL) {
+              if (id(global_page) > 0)
+                id(global_page) -= 1;
+              id(m5stack_display).update(); 
+              return;
+            }
+            if (id(global_page) == PAGE_ALARMS) {
+              id(alarms_menu).up();
+            }
+
   - platform: gpio
     id: M5_BtnB
     pin:
       number: 38
       inverted: true
-    on_click:
-      min_length: 0s
-      max_length: 10s
+    on_multi_click:
+    - timing:
+        - ON for at most 1s
+        - OFF for at most 1s
+        - ON for at most 1s
+        - OFF for at least 0.2s
       then:
-        - display_menu.enter: my_menu
+        - logger.log: "Double Click!"
+        - lambda: |-
+            
+            id(global_mode) += 1;
+            if (id(global_mode) == 2)
+              id(global_mode) = 0;
+            
+            id(m5stack_display).update();
+    - timing:
+        - ON for 1s to 7s
+        - OFF for at least 0.5s
+      then:
+        - logger.log: "Single Long Click!"
+        - lambda: |-
+            
+            id(global_mode) += 1;
+            if (id(global_mode) == 2)
+              id(global_mode) = 0;
+            
+            id(m5stack_display).update();
+    - timing:
+        - ON for at most 1s
+        - OFF for at least 0.5s
+      then:
+        - logger.log: "Single Short Clicked"
+
   - platform: gpio
     id: M5_BtnC
     pin:
       number: 37
       inverted: true
-    on_click:
-      min_length: 0s
-      max_length: 10s
+    on_multi_click:
+    - timing:
+        - ON for at most 1s
+        - OFF for at least 0.5s
       then:
-        - display_menu.down: my_menu
-        
+        - logger.log: "Single Short Clicked"
+        - lambda: |-
+            if (id(global_mode) == MODE_NORMAL) {
+              if (id(global_page) < PAGE_MAX)
+                id(global_page) += 1;
+              id(m5stack_display).update(); 
+              return;
+            }
+            if (id(global_page) == PAGE_ALARMS) {
+              id(alarms_menu).down();
+            }
+            
 font:
-  - file: "gfonts://Roboto@medium"
-    id: my_font
+  - file: "gfonts://Ubuntu+Mono"
+    id: ubuntumono10
+    size: 10
+  - file: "gfonts://Ubuntu+Mono"
+    id: ubuntumono16
+    size: 16
+  - file: "gfonts://Ubuntu+Mono"
+    id: ubuntumono18
+    size: 18
+  - file: "gfonts://Ubuntu+Mono"
+    id: ubuntumono20
+    size: 20
+  - file: "gfonts://Ubuntu+Mono"
+    id: ubuntumono22
     size: 22
-    glyphs: '!"%()+,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz/³µ'
 
 # GPIO pin of the display backlight
 output:
@@ -116,8 +197,8 @@ light:
 
 
 graphical_display_menu:
-  id: my_menu
-  font: my_font
+  id: alarms_menu
+  font: ubuntumono22
   active: true
   on_redraw:
     then:
@@ -125,7 +206,6 @@ graphical_display_menu:
   items:
     - type: Label
       text: ---
-
 
 display:
   - platform: ili9xxx
@@ -144,7 +224,29 @@ display:
         
         const auto width = it.get_width();
         const auto height = it.get_height();
-        it.menu(0, 16, id(my_menu), width, height-16);
+
+        it.rectangle(0, 0, width, 22);
+        if (id(global_mode) == MODE_CONTROL)
+          it.rectangle(1, 1, width-1, 21);
+        
+        const char* modes[] = { MODE_NORMAL_TITLE, MODE_CONTROL_TITLE };
+        const char* pages[] = { PAGE_HOME_TITLE, PAGE_MUSIC_TITLE, PAGE_ALARMS_TITLE };
+        it.printf(4, 2, id(ubuntumono18), "%s", modes[id(global_mode)]);
+        it.printf(width - 64, 2, id(ubuntumono18), "%s", pages[id(global_page)]);
+
+        if (id(global_page) == PAGE_HOME) {
+          it.printf(4, 25, id(ubuntumono18), "HOME PAGE. Lorem ipsum dolores...");
+        } else if (id(global_page) == PAGE_ALARMS) {
+          it.menu(0, 23, id(alarms_menu), width, height-23);
+        } else if (id(global_page) == PAGE_MUSIC) {
+          it.printf(4, 25, id(ubuntumono18), "Rock-N-Roll!");
+          it.printf(4, 45, id(ubuntumono20), "%s", id(global_music_artist).c_str());
+          it.printf(4, 65, id(ubuntumono20), "%s", id(global_music_track).c_str());
+          it.printf(4, 85, id(ubuntumono20), "%s", id(global_music_state).c_str());
+        } else {
+          it.printf(4, 25, id(ubuntumono18), "Unknown page.");
+
+        }
 
 json:
 
@@ -196,9 +298,16 @@ esp32_ble_server:
                       } else if (type == "weather") {
                         ESP_LOGI("BLE", "Weather: temp=%.1f°C hum=%.1f%%", doc["temp"] | 0.0f, doc["hum"] | 0.0f);
                       } else if (type == "musicstate") {
+
                         ESP_LOGI("BLE", "Music state: %s", doc["state"] | "");
+                        id(global_music_state) = doc["state"] | "";
+
                       } else if (type == "musicinfo") {
                         ESP_LOGI("BLE", "Now playing: %s - %s", doc["artist"] | "", doc["track"] | "");
+                        
+                        id(global_music_artist) = doc["artist"] | "";
+                        id(global_music_track) = doc["track"] | "";
+
                       } else if (type == "call") {
                         ESP_LOGI("BLE", "Call %s from %s", doc["cmd"] | "", doc["name"] | "");
                       } else if (type == "gps") {
@@ -230,14 +339,14 @@ esp32_ble_server:
                         }
                         
                         // now recreate alarm menu
-                        if (id(my_menu_root) != nullptr) {
-                          delete id(my_menu_root);
-                          id(my_menu_root) = nullptr;
+                        if (id(alarms_menu_root) != nullptr) {
+                          delete id(alarms_menu_root);
+                          id(alarms_menu_root) = nullptr;
                         }
 
                         auto* root = new display_menu_base::MenuItemMenu();
-                        id(my_menu_root) = root;
-                        id(my_menu)->set_root_item(root);
+                        id(alarms_menu_root) = root;
+                        id(alarms_menu)->set_root_item(root);
 
                         const char* days[] = {"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
 
@@ -268,10 +377,8 @@ esp32_ble_server:
                           item->set_text("(no alarms)");
                           root->add_item(item);
                         }
-                        
-                        id(my_menu).show_main();
-                        id(m5stack_display).update();
 
+                        id(alarms_menu).show_main();
                       } else {
                         ESP_LOGW("BLE", "Unhandled type: %s", type.c_str());
                       }
@@ -284,6 +391,8 @@ esp32_ble_server:
                     start = id(global_ble_rx_buf).find("\x10GB(");
                     end = id(global_ble_rx_buf).find(")\n", start);
                   }
+
+                  id(m5stack_display).update();
 
                   // Optional: prevent buffer overflow
                   if (id(global_ble_rx_buf).length() > 2048) {
