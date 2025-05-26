@@ -6,10 +6,16 @@ globals:
     type: std::string
     restore_value: no
     initial_value: '""'
+  - id: global_notifications
+    type: std::map<int, std::string>
+    restore_value: no
   - id: global_alarms
     type: std::vector<uint32_t>
     restore_value: no 
-  - id: alarms_menu_root # store it as a global to be able to manipulate from lambda
+  - id: global_alarms_menu_root # store it as a global to be able to manipulate from lambda
+    type: display_menu_base::MenuItemMenu*
+    initial_value: 'nullptr'
+  - id: global_notifications_menu_root # store it as a global to be able to manipulate from lambda
     type: display_menu_base::MenuItemMenu*
     initial_value: 'nullptr'
   - id: global_mode
@@ -34,6 +40,22 @@ globals:
     type: float
     restore_value: no
     initial_value: '0.0'
+
+debug:
+  update_interval: 5s
+
+text_sensor:
+  - platform: debug
+    device:
+      name: "Device Info"
+    reset_reason:
+      name: "Reset Reason"
+
+sensor:
+  - platform: debug
+    free:
+      name: "Heap Free"
+
 
 esphome:
   name: "${name}"
@@ -77,9 +99,46 @@ script:
             id(tx_char).notify();
             delay(30);
           }
-          
+  - id: script_update_notifications_menu
+    mode: restart
+    then:
+      - delay: 300ms
+      - lambda: |-
+          auto* root = new display_menu_base::MenuItemMenu();
+          id(notifications_menu)->set_root_item(root);
+          id(global_notifications_menu_root) = root;
+
+          bool added = false;
+          for (const auto& pair : id(global_notifications)) {
+            const std::string& raw = pair.second;
+            StaticJsonDocument<512> doc;
+            if (deserializeJson(doc, raw.c_str()) != DeserializationError::Ok) continue;
+
+            std::string src = doc["src"] | "";
+            std::string title = doc["title"] | "";
+            std::string subject = doc["subject"] | "";
+
+            const std::string& content = !subject.empty() ? subject : (!title.empty() ? title : doc["body"] | "");
+
+            char label[96];
+            snprintf(label, sizeof(label), "%s: %s", src.c_str(), content.c_str());
+
+            auto* item = new display_menu_base::MenuItem(display_menu_base::MENU_ITEM_LABEL);
+            item->set_text(label);
+            root->add_item(item);
+            added = true;
+          }
+
+          if (!added) {
+            auto* empty = new display_menu_base::MenuItem(display_menu_base::MENU_ITEM_LABEL);
+            empty->set_text("(no notifications)");
+            root->add_item(empty);
+          }
+
+          id(notifications_menu).show_main();
 
 logger:
+  level: debug
 
 uart:
   rx_pin: 16
@@ -290,15 +349,25 @@ light:
 
 
 graphical_display_menu:
-  id: alarms_menu
-  font: ubuntumono22
-  active: true
-  on_redraw:
-    then:
-      component.update: m5stack_display
-  items:
-    - type: Label
-      text: ---
+  - id: alarms_menu
+    font: ubuntumono22
+    active: true
+    on_redraw:
+      then:
+        component.update: m5stack_display
+    items:
+      - type: Label
+        text: ---
+  - id: notifications_menu
+    font: ubuntumono22
+    active: true
+    on_redraw:
+      then:
+        component.update: m5stack_display
+    items:
+      - type: Label
+        text: ---
+
 
 display:
   - platform: ili9xxx
@@ -323,7 +392,7 @@ display:
           it.rectangle(1, 1, width-1, 21);
         
         const char* modes[] = { MODE_NORMAL_TITLE, MODE_CONTROL_TITLE };
-        const char* pages[] = { PAGE_HOME_TITLE, PAGE_MUSIC_TITLE, PAGE_ALARMS_TITLE };
+        const char* pages[] = { PAGE_HOME_TITLE, PAGE_MUSIC_TITLE, PAGE_ALARMS_TITLE, PAGE_NOTIFS_TITLE};
         it.printf(4, 2, id(ubuntumono18), "%s", modes[id(global_mode)]);
         it.printf(width - 64, 2, id(ubuntumono18), "%s", pages[id(global_page)]);
 
@@ -331,6 +400,8 @@ display:
           it.printf(4, 25, id(ubuntumono18), "HOME PAGE. Lorem ipsum dolores...");
         } else if (id(global_page) == PAGE_ALARMS) {
           it.menu(0, 23, id(alarms_menu), width, height-23);
+        } else if (id(global_page) == PAGE_NOTIFS) {
+          it.menu(0, 23, id(notifications_menu), width, height-23);
         } else if (id(global_page) == PAGE_MUSIC) {
           it.printf(4, 25, id(ubuntumono18), "Rock-N-Roll!");
           it.printf(4, 45, id(ubuntumono20), "%s", id(global_music_artist).c_str());
@@ -379,9 +450,29 @@ esp32_ble_server:
                       ESP_LOGI("BLE", "Parsed type: %s", type.c_str());
 
                       if (type == "notify") {
-                        ESP_LOGI("BLE", "Notification from %s: %s", doc["src"] | "", doc["title"] | "");
+                        int notif_id = doc["id"] | -1;
+                        if (notif_id == -1) return;
+
+                        std::string str;
+                        serializeJson(doc, str);
+                        id(global_notifications)[notif_id] = str;
+
+                        ESP_LOGI("NOTIF", "Stored notification #%d", notif_id);
+
+                        id(script_update_notifications_menu)->stop();
+                        id(script_update_notifications_menu)->execute();
+
                       } else if (type == "notify-") {
-                        ESP_LOGI("BLE", "Delete notification ID %d", doc["id"] | 0);
+                          int notif_id = doc["id"] | -1;
+                          if (notif_id == -1) return;
+
+                          id(global_notifications).erase(notif_id);
+
+                          ESP_LOGI("NOTIF", "Deleted notification #%d", notif_id);
+
+                          id(script_update_notifications_menu)->stop();
+                          id(script_update_notifications_menu)->execute();
+
                       } else if (type == "find") {
                         bool on = doc["n"] | false;
                         ESP_LOGI("BLE", "Find device: %s", on ? "ON" : "OFF");
@@ -434,13 +525,16 @@ esp32_ble_server:
                         }
                         
                         // now recreate alarm menu
-                        if (id(alarms_menu_root) != nullptr) {
-                          delete id(alarms_menu_root);
-                          id(alarms_menu_root) = nullptr;
+                        if (id(global_alarms_menu_root) != nullptr) {
+                          for (int i = 0; i < id(global_alarms_menu_root)->items_size(); i += 1) {
+                            delete id(global_alarms_menu_root)->get_item(i);
+                          }
+                          delete id(global_alarms_menu_root);
+                          id(global_alarms_menu_root) = nullptr;
                         }
 
                         auto* root = new display_menu_base::MenuItemMenu();
-                        id(alarms_menu_root) = root;
+                        id(global_alarms_menu_root) = root;
                         id(alarms_menu)->set_root_item(root);
 
                         const char* days[] = {"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};

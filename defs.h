@@ -14,9 +14,11 @@
 #define PAGE_HOME           0
 #define PAGE_MUSIC          1
 #define PAGE_ALARMS         2
+#define PAGE_NOTIFS         3
 
-#define PAGE_MAX            PAGE_ALARMS
+#define PAGE_MAX            PAGE_NOTIFS
 
 #define PAGE_HOME_TITLE     "HOME"
 #define PAGE_MUSIC_TITLE    "MUSIC"
 #define PAGE_ALARMS_TITLE   "ALARMS"
+#define PAGE_NOTIFS_TITLE   "NOTIFS"
