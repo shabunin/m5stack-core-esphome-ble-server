@@ -65,6 +65,10 @@ esphome:
     version: "1.0"
   includes:
     - defs.h
+  on_boot:
+    then:
+      lambda: |-
+        id(back_light).turn_on().set_brightness(0.21).perform();
 
 esp32:
   board: m5stack-core-esp32
